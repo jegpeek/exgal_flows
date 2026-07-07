@@ -1,0 +1,38 @@
+# Configuration for the M33 flow-vs-CO analysis.
+# Every value the original notebook hardcoded (sometimes inconsistently)
+# lives here.  See src/exgal_flows/config.py for the meaning of each field.
+
+galaxy:
+  name: M33
+  inclination_deg: 55.08      # notebook used 55.08 (deproject) & 55.1 (gradient); unified
+  position_angle_deg: 201.12
+  center_ra_deg: 23.4607
+  center_dec_deg: 30.6583
+  distance_kpc: 840.0         # notebook used 840 (pixel scale) & 800 (rough cells); adopt 840
+
+analysis:
+  co_threshold_K: 0.6         # cont_max in the notebook
+  hi_col_to_surfdens: 0.0196  # K km/s -> Msun/pc^2 (optically thin 21cm)
+  # Analysis aperture (image-plane radius from map center).
+  # 4000 pc captures ~90% of CO>2x-threshold pixels and ~99% of the
+  # brightest (CO>7x) pixels -- i.e. essentially the whole molecular disk.
+  # NOTE: the original notebook used rmax=300 *pixels*, which on this
+  # 3.05 pc/pix data is only 916 pc and captures just the inner ~10% of
+  # the CO disk -- where the CO-vs-divergence sign is anomalously positive.
+  # The headline "CO at colliding flows" (negative divergence) result holds
+  # over the full disk; see FINDINGS.md.  Set to 916.0 to reproduce the
+  # notebook's inner-disk aperture exactly.
+  radius_max_pc: 4000.0        # analysis radius (notebook rmax=300 pix @ 3.05 pc/pix)
+  smoothing_fwhm_pc: [0.0, 14.4, 28.8, 57.5, 86.3]  # resolution study, FWHM in pc
+  grad_bin_width: 0.01        # km/s/pc bin width (ds)
+  shear_range: [0.0, 0.2]     # km/s/pc
+  div_range: [-0.2, 0.2]      # km/s/pc
+  n_wedges: 8
+  n_boot: 1000
+  co_factor_bins: [2.0, 3.0, 4.0, 7.0]   # CO-brightness bins in units of threshold
+  random_seed: 0
+  # Tiled block bootstrap of the radial divergence profile (FINDINGS.md).
+  # Annulus edges in pc; block side in pc (resampled whole to respect the
+  # spatial correlation of the maps -- iid errors here are ~10x too small).
+  radial_edges_pc: [0.0, 300.0, 600.0, 900.0, 1200.0, 1500.0, 2000.0, 2500.0, 3200.0, 4000.0]
+  block_pc: 300.0

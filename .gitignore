@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Environments
+.venv/
+venv/
+env/
+
+# Data (large FITS cubes live outside version control)
+data/*.fits
+data/*.FITS
+
+# Outputs
+outputs/
+*.png
+!docs/**/*.png
+
+# OS
+.DS_Store

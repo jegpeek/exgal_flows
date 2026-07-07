@@ -1,0 +1,29 @@
+# M33 config for the OLDER, lower-resolution HI data:
+#   VLA 14B+17B, 8-arcsec feathered with GBT (~4.07 pc/pix, 8.2" beam).
+# Galaxy geometry is identical to config/m33.yaml; only the HI input epoch
+# differs.  Because the analysis scales below are physical (parsecs), the
+# same values probe the same physical scales on both the old and new grids,
+# which is what makes the new-vs-old comparison fair.
+
+galaxy:
+  name: M33
+  inclination_deg: 55.08
+  position_angle_deg: 201.12
+  center_ra_deg: 23.4607
+  center_dec_deg: 30.6583
+  distance_kpc: 840.0
+
+analysis:
+  co_threshold_K: 0.6
+  hi_col_to_surfdens: 0.0196
+  radius_max_pc: 4000.0   # whole molecular disk; see config/m33.yaml + FINDINGS.md
+  smoothing_fwhm_pc: [0.0, 14.4, 28.8, 57.5, 86.3]
+  grad_bin_width: 0.01
+  shear_range: [0.0, 0.2]
+  div_range: [-0.2, 0.2]
+  n_wedges: 8
+  n_boot: 1000
+  co_factor_bins: [2.0, 3.0, 4.0, 7.0]
+  random_seed: 0
+  radial_edges_pc: [0.0, 300.0, 600.0, 900.0, 1200.0, 1500.0, 2000.0, 2500.0, 3200.0, 4000.0]
+  block_pc: 300.0
