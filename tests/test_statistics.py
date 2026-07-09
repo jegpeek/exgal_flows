@@ -153,3 +153,56 @@ def test_co_fraction_vs_gradient_boot_mask_restricts():
         mask=(np.arange(n) < n // 2),
     )
     assert half.counts.sum() < full.counts.sum()
+
+
+@pytest.mark.parametrize("method", ["ols", "l1"])
+def test_block_bootstrap_line_fit_recovers_injected_line(method):
+    """Both estimators recover a known intercept/slope and its sign."""
+    rng = np.random.default_rng(0)
+    # 200 tiles, ~50 pixels each, radius 0-4000 pc, div = 6 - 4*r_kpc + noise
+    n_tiles = 200
+    tile_idx = np.repeat(np.arange(n_tiles), 50)
+    r_pc = rng.uniform(0, 4000, tile_idx.size)
+    a_true, b_true = 6.0, -4.0
+    div = a_true + b_true * (r_pc / 1000.0) + rng.normal(0, 3, r_pc.size)
+    fit = st.block_bootstrap_line_fit(
+        r_pc, div, tile_idx, n_tiles, n_boot=200, seed=1, method=method)
+    assert fit.method == method
+    # point estimates near truth
+    assert abs(fit.intercept - a_true) < 1.5
+    assert abs(fit.slope - b_true) < 1.5
+    # bands ordered and bracket the point estimate
+    assert fit.slope_lo <= fit.slope <= fit.slope_hi
+    assert fit.intercept_lo <= fit.intercept <= fit.intercept_hi
+    # slope is confidently negative; zero-crossing near 1500 pc
+    assert fit.slope_neg_prob > 0.9
+    assert 1000 < fit.zero_crossing_pc < 2000
+
+
+def test_block_bootstrap_line_fit_rejects_bad_method():
+    rng = np.random.default_rng(0)
+    tile_idx = np.repeat(np.arange(10), 5)
+    r = rng.uniform(0, 4000, tile_idx.size)
+    with pytest.raises(ValueError):
+        st.block_bootstrap_line_fit(r, r, tile_idx, 10, n_boot=5, method="bogus")
+
+
+def test_block_bootstrap_sigmoid_fit_recovers_step():
+    """Injected inner-positive / outer-negative step is recovered, straddles zero."""
+    rng = np.random.default_rng(3)
+    n_tiles = 200
+    per = 50
+    # tile centres spread across 0-4000 pc; pixels inherit tile radius + jitter
+    tile_r = rng.uniform(0, 4000, size=n_tiles)
+    r = np.repeat(tile_r, per) + rng.normal(0, 40, size=n_tiles * per)
+    r = np.clip(r, 0, 4000)
+    tile_idx = np.repeat(np.arange(n_tiles), per)
+    hi_true, lo_true, r0_true, w_true = 6.0, -5.0, 1.2, 0.15  # kpc
+    truth = lo_true + (hi_true - lo_true) / (1.0 + np.exp((r / 1000.0 - r0_true) / w_true))
+    y = truth + rng.normal(0, 3.0, size=r.size)
+    fit = st.block_bootstrap_sigmoid_fit(r, y, tile_idx, n_tiles, n_boot=150, seed=0)
+    assert fit.hi > 0 and fit.lo < 0                    # correct signs
+    assert 800 < fit.zero_crossing_pc < 1600            # crosses near truth
+    assert fit.amplitude_lo < fit.amplitude < fit.amplitude_hi
+    assert fit.straddle_zero_prob > 0.9                 # decisively straddles
+    assert fit.method == "sigmoid"

@@ -118,12 +118,13 @@ def plot_resolution_study(study: dict, which: str = "shear"):
     return fig
 
 
-def plot_radial_divergence_profile(profile, ax=None):
-    """Radial profile of CO-bright divergence: iid vs block-bootstrap errors.
+def plot_radial_divergence_profile(profile, ax=None, fit=None):
+    """Radial profile of CO-bright divergence with block-bootstrap errors.
 
-    Draws the point-estimate median divergence per annulus with the wide
-    spatial block-bootstrap band and, for contrast, the narrow (over-
-    optimistic) iid band.  The zero line and the turnover radius are marked.
+    Draws the point-estimate median divergence per annulus with the spatial
+    block-bootstrap band, the zero line, and the turnover radius.  If a
+    linear fit is supplied, the fitted line ``div(r) = a + b r`` and its
+    block-bootstrap band are overlaid, with the fitted parameters annotated.
 
     Parameters
     ----------
@@ -131,6 +132,10 @@ def plot_radial_divergence_profile(profile, ax=None):
         From :meth:`exgal_flows.pipeline.FlowAnalysis.radial_divergence_profile`
         or :func:`exgal_flows.statistics.tiled_block_bootstrap_radial_profile`.
     ax : matplotlib Axes, optional
+    fit : LinearRadialFit or list of LinearRadialFit, optional
+        From :meth:`exgal_flows.pipeline.FlowAnalysis.radial_divergence_fit`.
+        When given, each fitted line and its block-bootstrap band are drawn
+        (e.g. pass ``[ols_fit, l1_fit]`` to overlay both estimators).
 
     Returns
     -------
@@ -142,21 +147,36 @@ def plot_radial_divergence_profile(profile, ax=None):
         fig = ax.figure
 
     r = profile.r_centers
-    ax.fill_between(r, profile.iid_low, profile.iid_high,
-                    color="0.6", alpha=0.5, label="iid bootstrap (68%)")
     ax.fill_between(r, profile.err_low, profile.err_high,
-                    color="#1f6feb", alpha=0.30, label="block bootstrap (68%)")
-    ax.plot(r, profile.medians, "o-", color="#1f6feb", label="median divergence")
+                    color="#1f6feb", alpha=0.25,
+                    label="block bootstrap (68%)")
+    ax.plot(r, profile.medians, "o", color="#1f6feb", label="median divergence",
+            zorder=5)
     ax.axhline(0.0, color="k", ls="--", alpha=0.6)
 
-    if np.isfinite(profile.turnover_pc):
+    if fit is not None:
+        fits = [fit] if not isinstance(fit, (list, tuple)) else list(fit)
+        _fit_color = {"ols": "#d62728", "l1": "#2ca02c", "sigmoid": "#9467bd"}
+        for f in fits:
+            color = _fit_color.get(f.method, "#d62728")
+            ax.fill_between(f.r_grid_pc, f.band_lo, f.band_hi,
+                            color=color, alpha=0.18)
+            lbl = getattr(f, "label", "") or f.method
+            ax.plot(f.r_grid_pc, f.line, "-", color=color, lw=2.0,
+                    label=lbl, zorder=6)
+        for f in fits:
+            color = _fit_color.get(f.method, "#d62728")
+            if np.isfinite(f.zero_crossing_pc):
+                ax.axvline(f.zero_crossing_pc, color=color, ls=":", lw=1.4)
+    elif np.isfinite(profile.turnover_pc):
         ax.axvline(profile.turnover_pc, color="#d62728", ls=":", lw=1.8)
         ymin, ymax = ax.get_ylim()
-        ax.text(profile.turnover_pc, ymax, f"  turnover ≈ {profile.turnover_pc:.0f} pc",
+        ax.text(profile.turnover_pc, ymax,
+                f"  turnover ≈ {profile.turnover_pc:.0f} pc",
                 color="#d62728", va="top", ha="left", fontsize=8)
 
     ax.set_xlabel("Galactocentric radius [pc]")
-    ax.set_ylabel("Median LOS divergence of CO-bright gas [km/s/kpc]")
+    ax.set_ylabel("LOS divergence of CO-bright gas [km/s/kpc]")
     ax.legend(fontsize=8, loc="lower right")
     return fig
 
@@ -212,3 +232,98 @@ def plot_shear_sensitivity(curves: dict, ax=None, normalize: bool = True,
     ax.set_xlabel("|shear|  [km/s/kpc]")
     ax.legend(frameon=False)
     return ax
+
+
+def plot_block_bootstrap_tiles(tiling: dict, seed: int = 0, axes=None, vlim: float = 100.0):
+    """Illustrate the spatial tiled block bootstrap.
+
+    Two panels: (left) the CO-bright pixels coloured by line-of-sight
+    divergence with the block grid drawn over them; (right) one bootstrap
+    resample, with each occupied tile shaded by how many times it was drawn
+    (0 = dropped, 1, 2, 3+).  The point is visual: whole tiles -- and the
+    correlated pixels inside them -- are kept or dropped together, which is
+    why the block bootstrap gives wider, honest error bars than the iid one.
+
+    Parameters
+    ----------
+    tiling : dict
+        Output of :meth:`pipeline.FlowAnalysis.block_tiling`.
+    seed : int
+        Seed for the single illustrative resample drawn on the right panel.
+    axes : (Axes, Axes), optional
+        Target axes pair; a new 1x2 figure is made if omitted.
+    vlim : float
+        Divergence colour limit (km/s/kpc).
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
+    import numpy as np
+    from matplotlib.patches import Rectangle, Patch
+    from matplotlib.collections import PatchCollection
+
+    ii = np.asarray(tiling["i"]); jj = np.asarray(tiling["j"])
+    dv = np.asarray(tiling["divergence"])
+    tile_idx = np.asarray(tiling["tile_idx"]); n_tiles = int(tiling["n_tiles"])
+    block_pix = int(tiling["block_pix"]); px_dec = float(tiling["pixel_scale_pc"])
+    block_pc = float(tiling["block_pc"])
+
+    if axes is None:
+        fig, (axL, axR) = plt.subplots(1, 2, figsize=(9.6, 5.0), sharex=True, sharey=True)
+    else:
+        axL, axR = axes
+        fig = axL.figure
+
+    # local origin at the lower-left occupied tile; work in kpc
+    i0 = (ii.min() // block_pix) * block_pix
+    j0 = (jj.min() // block_pix) * block_pix
+    x = (jj - j0) * px_dec / 1000.0
+    y = (ii - i0) * px_dec / 1000.0
+    tile_kpc = block_pix * px_dec / 1000.0
+
+    # tile lower-left corners (kpc), recovered from the pixel members
+    tx = np.empty(n_tiles); ty = np.empty(n_tiles)
+    for t in range(n_tiles):
+        m = tile_idx == t
+        tx[t] = (jj[m].min() // block_pix) * block_pix
+        ty[t] = (ii[m].min() // block_pix) * block_pix
+    tx = (tx - j0) * px_dec / 1000.0
+    ty = (ty - i0) * px_dec / 1000.0
+
+    # LEFT: pixels + grid
+    scL = axL.scatter(x, y, c=np.clip(dv, -vlim, vlim), cmap="RdBu_r",
+                      s=2, vmin=-vlim, vmax=vlim, rasterized=True)
+    for xv in np.arange(0, tx.max() + 2 * tile_kpc, tile_kpc):
+        axL.axvline(xv, color="0.55", lw=0.4, zorder=1)
+    for yv in np.arange(0, ty.max() + 2 * tile_kpc, tile_kpc):
+        axL.axhline(yv, color="0.55", lw=0.4, zorder=1)
+    axL.set_title(f"CO-bright pixels + {block_pc:.0f} pc tiles")
+    cb = fig.colorbar(scL, ax=axL, fraction=0.046, pad=0.02)
+    cb.set_label("LOS divergence [km/s/kpc]")
+
+    # RIGHT: one bootstrap draw
+    rng = np.random.default_rng(seed)
+    counts = np.bincount(rng.integers(0, n_tiles, size=n_tiles), minlength=n_tiles)
+    palette = {0: "#f0f0f0", 1: "#9ecae1", 2: "#3182bd"}
+    faces = [palette.get(int(c), "#08306b") for c in counts]
+    rects = [Rectangle((tx[t], ty[t]), tile_kpc, tile_kpc) for t in range(n_tiles)]
+    axR.add_collection(PatchCollection(rects, facecolor=faces, edgecolor="white",
+                                       lw=0.3, zorder=1))
+    axR.scatter(x, y, c="0.25", s=0.5, alpha=0.35, rasterized=True, zorder=2)
+    axR.set_title("One bootstrap draw: whole tiles resampled")
+    axR.legend(handles=[Patch(fc="#f0f0f0", ec="0.6", label="0 (dropped)"),
+                        Patch(fc="#9ecae1", ec="0.6", label="1"),
+                        Patch(fc="#3182bd", ec="0.6", label="2"),
+                        Patch(fc="#08306b", ec="0.6", label="3+")],
+               title="times drawn", frameon=False, loc="upper right")
+
+    for ax in (axL, axR):
+        ax.set_aspect("equal"); ax.set_xlabel("x [kpc]"); ax.margins(0.02)
+    axL.set_ylabel("y [kpc]")
+    n_drop = int(np.sum(counts == 0)); n_dup = int(np.sum(counts >= 2))
+    fig.suptitle(f"Spatial tiled block bootstrap  |  {n_tiles} occupied tiles "
+                 f"({block_pix}x{block_pix} px = {block_pc:.0f} pc);  "
+                 f"this draw: {n_drop} dropped, {n_dup} duplicated")
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    return fig

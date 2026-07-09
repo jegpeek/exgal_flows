@@ -316,6 +316,136 @@ class FlowAnalysis:
             seed=ana.random_seed,
         )
 
+    def radial_divergence_fit(
+        self, decim: int = 1, co_factor: float = 2.0, n_boot: int | None = None,
+        method: str = "ols",
+    ) -> _stats.LinearRadialFit:
+        """Fit the radial divergence trend with a straight line.
+
+        Fits ``div(r) = a + b r`` directly to the CO-bright pixels (the same
+        selection as :meth:`radial_divergence_profile`): ``a`` is the overall
+        sense of divergence extrapolated to the centre, ``b`` the rate of
+        change with radius.  Errors are a spatial block bootstrap over tiles,
+        so the fit -- not just the binned error bars -- carries an honest
+        uncertainty band.
+
+        Parameters
+        ----------
+        decim : int
+            Decimation stride applied to the maps before selection.
+        co_factor : float
+            CO-brightness cut as a multiple of ``co_threshold_K``.
+        n_boot : int, optional
+            Number of bootstrap resamples (defaults to the config value).
+        method : str
+            ``"ols"`` (least squares) or ``"l1"`` (robust least absolute
+            deviations, the median-like fit).
+
+        Returns
+        -------
+        exgal_flows.statistics.LinearRadialFit
+        """
+        t = self.block_tiling(decim=decim, co_factor=co_factor)
+        ana = self.config.analysis
+        return _stats.block_bootstrap_line_fit(
+            radius_pc=t["radius_pc"],
+            divergence=t["divergence"],
+            tile_idx=t["tile_idx"],
+            n_tiles=t["n_tiles"],
+            n_boot=ana.n_boot if n_boot is None else n_boot,
+            seed=ana.random_seed,
+            method=method,
+        )
+
+    def radial_divergence_sigmoid(
+        self, decim: int = 1, co_factor: float = 2.0, n_boot: int | None = None
+    ) -> _stats.SigmoidRadialFit:
+        """Fit the radial divergence trend with a saturating sigmoid.
+
+        A bounded alternative to :meth:`radial_divergence_fit`: the divergence
+        saturates to an inner plateau and an outer plateau across a transition
+        radius, instead of a line that grows without limit.  Same CO-bright
+        selection and spatial block bootstrap.  The headline number is
+        ``straddle_zero_prob`` -- the probability the inner plateau is positive
+        and the outer negative, i.e. that the reversal rules out zero.
+
+        Parameters
+        ----------
+        decim : int
+            Decimation stride applied to the maps before selection.
+        co_factor : float
+            CO-brightness cut as a multiple of ``co_threshold_K``.
+        n_boot : int, optional
+            Number of bootstrap resamples (defaults to the config value).
+
+        Returns
+        -------
+        exgal_flows.statistics.SigmoidRadialFit
+        """
+        t = self.block_tiling(decim=decim, co_factor=co_factor)
+        ana = self.config.analysis
+        return _stats.block_bootstrap_sigmoid_fit(
+            radius_pc=t["radius_pc"],
+            divergence=t["divergence"],
+            tile_idx=t["tile_idx"],
+            n_tiles=t["n_tiles"],
+            n_boot=ana.n_boot if n_boot is None else n_boot,
+            seed=ana.random_seed,
+        )
+
+    def block_tiling(self, decim: int = 1, co_factor: float = 2.0) -> dict:
+        """Return the CO-bright pixels and their block-bootstrap tile IDs.
+
+        Exposes the exact spatial tiling that
+        :meth:`radial_divergence_profile` resamples, so a figure can show
+        *what the blocks look like*.  The selection (CO-bright pixels inside
+        the aperture) and the tile keying are identical to that method.
+
+        Parameters
+        ----------
+        decim : int
+            Decimation stride (use the same value you pass to
+            :meth:`radial_divergence_profile` for a faithful picture).
+        co_factor : float
+            CO-brightness cut as a multiple of ``co_threshold_K``.
+
+        Returns
+        -------
+        dict
+            Keys: ``i`` / ``j`` (pixel row/col of each CO-bright pixel, in
+            decimated-pixel units), ``divergence`` (km/s/kpc), ``radius_pc``,
+            ``tile_idx`` (tile index per pixel), ``n_tiles``, ``block_pix``
+            (tile side, decimated pixels), ``block_pc``, and
+            ``pixel_scale_pc`` (physical pc per decimated pixel).
+        """
+        ana = self.config.analysis
+        px = self.maps.pixel_scale_pc
+        px_dec = px * decim
+        sl = (slice(None, None, decim), slice(None, None, decim))
+
+        div = self.flow.divergence.value[sl]
+        co = np.asarray(self.co_deproj)[sl]
+        rad = self.radius[sl]
+        sel = (
+            (co > ana.co_threshold_K * co_factor)
+            & np.isfinite(div)
+            & (rad < self._radius_max_pix)
+        )
+        ii, jj = np.nonzero(sel)
+        block_pix = max(1, int(round(ana.block_pc / px_dec)))
+        tile_idx, n_tiles, block_pix = _stats.assign_tiles(ii, jj, block_pix)
+        return {
+            "i": ii,
+            "j": jj,
+            "divergence": div[sel] * 1000.0,
+            "radius_pc": rad[sel] * px,
+            "tile_idx": tile_idx,
+            "n_tiles": n_tiles,
+            "block_pix": block_pix,
+            "block_pc": ana.block_pc,
+            "pixel_scale_pc": px_dec,
+        }
+
     def resolution_study(self, decim: int = 1):
         """Repeat the shear/divergence curves at each smoothing scale.
 

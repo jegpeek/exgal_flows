@@ -167,8 +167,9 @@ resampling:
 - point-estimate zero-crossing (the turnover) at **r ~ 1173 pc**
 
 The reversal is a real, spatially-coherent trend, not inner-region noise.
-See `outputs/radial_blockboot.png` (iid vs block error bands) and
-`outputs/galaxy_turnover.png` (the turnover radius drawn on the galaxy).
+See `outputs/radial_blockboot.png` (binned median profile with the two line
+fits below) and `outputs/galaxy_turnover.png` (the turnover radius drawn on
+the galaxy).
 
 The spatial block bootstrap is a first-class part of the package:
 
@@ -184,6 +185,83 @@ plot_radial_divergence_profile(prof)      # reproduces outputs/radial_blockboot.
 
 Block side and annulus edges are set in `config/m33.yaml`
 (`block_pc`, `radial_edges_pc`).
+
+### Fitting the trend directly
+
+The binned profile is convenient but throws away information. We also fit the
+**simplest model directly to the per-pixel divergence** — a straight line
+
+```
+div(r) = a + b*r
+```
+
+with `a` the overall sense of divergence (extrapolated to the centre,
+km/s/kpc) and `b` the rate of change with radius (km/s/kpc per kpc). This is
+fit to the data itself, *not* to the error bars, and is block-bootstrapped
+over the same spatial tiles for honest uncertainty. Two estimators, to show
+the answer is not an artifact of one loss function:
+
+| fit | `a` (km/s/kpc) | `b` (km/s/kpc/kpc) | zero-crossing | P(`b`<0) |
+|-----|---------------:|-------------------:|--------------:|---------:|
+| OLS (least squares, mean-like)   | **+5.1** [0.8, 9.3] | **-3.9** [-5.9, -2.1] | ~1310 pc | 0.98 |
+| L1 (least abs. dev., median-like)| **+2.0** [-1.0, 5.1] | **-2.3** [-3.8, -0.9] | ~900 pc  | 0.95 |
+
+Both agree on the qualitative result: **positive intercept, negative slope,
+zero-crossing near 0.9-1.3 kpc** — converging in the inner disk, diverging
+outside, with high confidence that the slope is negative. OLS is steeper
+because it tracks the (heavier) positive tail in the inner disk; L1 is
+shallower and, being median-like, is the natural companion to the binned
+median profile. The zero-crossings bracket the profile turnover (~1173 pc).
+
+```python
+ols = ana.radial_divergence_fit(method="ols")   # FlowAnalysis method
+l1  = ana.radial_divergence_fit(method="l1")
+ols.intercept, ols.slope, ols.zero_crossing_pc, ols.slope_neg_prob
+
+from exgal_flows.plotting import plot_radial_divergence_profile
+plot_radial_divergence_profile(prof, fit=[ols, l1])  # -> radial_blockboot.png
+```
+
+#### A sigmoid rules out zero more decisively than the line
+
+The line fit answers "is the slope negative?" (P(`b`<0) ~ 0.97). But the
+scientific claim is really "does divergence go from *positive* inside to
+*negative* outside?" — a statement about two plateaus, not one slope. So we
+also fit a bounded step
+
+```
+div(r) = lo + (hi - lo) / (1 + exp((r - r0) / w))
+```
+
+with `hi` = inner plateau, `lo` = outer plateau, `r0` = transition radius,
+`w` = width. Block-bootstrapped over the same tiles (500 draws, all
+converged):
+
+| parameter | value [16, 84] |
+|-----------|---------------:|
+| `hi` (inner plateau) | **+6.8** [+4.4, +20.5] km/s/kpc |
+| `lo` (outer plateau) | **-5.5** [-9.8, -4.2] km/s/kpc |
+| `r0` (transition)    | **1123** [482, 1427] pc |
+| amplitude `hi-lo`    | **12.4** [10.9, 29.1] km/s/kpc |
+| zero-crossing        | ~1127 pc |
+
+The headline: the inner plateau is positive **and** the outer plateau
+negative in **100%** of bootstrap draws — `straddle_zero_prob = 1.000`, versus
+the OLS line's `P(b<0) = 0.975`. **So yes, the sigmoid rules out "no reversal"
+more decisively than `y = a + b·r`.** It also tracks the binned medians more
+faithfully (sits on the +6 inner points and the -5/-6 outer points rather than
+splitting the difference), and the transition radius lands right on the profile
+turnover (~1173 pc). The caveat: the inner plateau's *magnitude* is poorly
+constrained (least squares chases the heavy positive tail of the sparse
+inner-disk pixels, hence the wide upper error), but its *sign* — the part that
+carries the significance — is rock-solid. The fitted width rails to ~20 pc
+(effectively a step); the data do not resolve a gradual transition.
+
+```python
+sig = ana.radial_divergence_sigmoid(n_boot=500)   # FlowAnalysis method
+sig.hi, sig.lo, sig.r0_pc, sig.amplitude, sig.straddle_zero_prob
+plot_radial_divergence_profile(prof, fit=[ols, l1, sig])  # -> radial_blockboot.png
+```
 
 ## Shear suppresses CO (the sensitivity study)
 
