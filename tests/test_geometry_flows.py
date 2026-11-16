@@ -61,3 +61,33 @@ def test_smoothed_velocity_zero_sigma_identity():
 
 def test_fwhm_pc_conversion():
     assert np.isclose(flows.fwhm_pc(2.0, 3.0), 2.0 * 3.0 * 2.355)
+
+
+def test_highpass_removes_large_scale_keeps_small_scale():
+    ny, nx = 400, 400
+    yy, xx = np.mgrid[:ny, :nx].astype(float)
+    plane = 0.5 * xx - 0.2 * yy + 30.0           # large-scale "rotation"
+    small = 2.0 * np.sin(2 * np.pi * xx / 12.0)  # 12-pixel ripple
+    v = plane + small
+    v[100:110, 200:215] = np.nan                 # a blanked hole
+    hp = flows.highpass_velocity_field(v, sigma_pix=40.0)
+    assert np.isnan(hp[105, 205])
+    inner = (slice(150, 250), slice(150, 250))
+    # plane (range ~200) gone, ripple preserved; the blanked hole skews the
+    # normalised low-pass of a sloped field slightly, hence the 0.2 allowance
+    resid = hp[inner] - small[inner]
+    assert np.nanmax(np.abs(resid)) < 0.2
+    gx = np.gradient(hp, axis=1)[inner]
+    gx_true = np.gradient(small, axis=1)[inner]
+    assert np.nanmax(np.abs(gx - gx_true)) < 0.02
+
+
+def test_lowpass_block_matches_full_resolution():
+    rng = np.random.default_rng(0)
+    yy, xx = np.mgrid[:240, :240].astype(float)
+    v = 10 * np.sin(xx / 60.0) + 5 * np.cos(yy / 45.0) + rng.normal(0, 1, xx.shape)
+    v[50:60, 50:60] = np.nan
+    full = flows.lowpass_velocity_field(v, 32.0, block=1)
+    fast = flows.lowpass_velocity_field(v, 32.0, block=4)
+    inner = (slice(40, 200), slice(40, 200))
+    assert np.nanmax(np.abs(full[inner] - fast[inner])) < 0.05

@@ -104,9 +104,14 @@ Amplitudes are line-of-sight gradients. In-plane values are larger by
 
 ## Status of the checks
 
-- Test 2(b): run on all three HI epochs, see below. The rotation model is not
-  needed for the main results at 8.2" and 5.3"; no subtraction at all is not
-  acceptable for shear.
+- Test 2(b): run on all three HI epochs with the 8" mom0 map, see below. The
+  rotation model is not needed for the divergence results. For shear, some
+  large-scale subtraction is needed, but a high-pass works as well as the
+  model. An earlier run with the 8" `broad_tpeak` map is superseded (see the
+  edge-rim note under Test 2(b)).
+- CO coverage-edge rim in `broad_tpeak`: found and quantified at 8.2" in
+  rotation-model mode. `strict_mom0` and the 7m peak map are not affected.
+  The other epochs were not rerun with `tpeak`.
 - Test 9: `edge_erode_pix` is implemented but not yet compared.
 - Test 5 (chance alignment): run, see below.
 - All other tests are not started.
@@ -174,25 +179,26 @@ Assessment:
 
 Four large-scale subtractions on three HI epochs: rotation model (default),
 none (moment-1 as observed), and a Gaussian high-pass of 500 pc and 1000 pc.
-Same `edge_erode_pix=3` for every mode. CO is the 8" `broad_tpeak` map with a
-base threshold of 0.1 K on the `cos i`-scaled map, so the numbers are not
-comparable with the mom0 runs above. `decim` is 1, 3 and 4 for the 21.4", 8.2"
-and 5.3" epochs. Results are cached in `outputs/highpass_check/`.
+Same `edge_erode_pix=3` for every mode. CO is the 8" `strict_mom0` map
+(K km/s) with a base threshold of 0.1 on the `cos i`-scaled map, so the bins
+are 0.2, 0.3, 0.4 and 0.7 on that map and the numbers are not comparable with
+the main run (threshold 0.6) or with Test 5. `decim` is 1, 3 and 4 for the
+21.4", 8.2" and 5.3" epochs. Results are cached in `outputs/highpass_check/`.
 
 | Epoch | Subtraction | All-pixel median | CO > 7x median | Shear `rel_drop` | Turnover [pc] |
 |-------|-------------|-----------------:|---------------:|-----------------:|--------------:|
-| 21.4" | rotation model | -0.12 | +0.5 [-2.7, +2.4] | 0.50 [0.41, 0.59] | 333 |
-| 21.4" | none | +0.04 | -2.9 [-4.4, -0.7] | 0.31 [0.21, 0.40] | 443 |
-| 21.4" | high-pass 500 pc | -0.24 | -2.2 [-2.9, -1.1] | 0.60 [0.53, 0.68] | 648 |
-| 21.4" | high-pass 1000 pc | -0.25 | -1.7 [-3.6, -1.0] | 0.55 [0.48, 0.63] | 374 |
-| 8.2" | rotation model | -1.16 | -5.9 [-8.2, -3.5] | 0.26 [0.24, 0.27] | 1138 |
-| 8.2" | none | -0.18 | -7.4 [-9.7, -4.8] | 0.20 [0.18, 0.21] | 1109 |
-| 8.2" | high-pass 500 pc | -0.94 | -6.3 [-8.3, -3.5] | 0.28 [0.26, 0.30] | 485 |
-| 8.2" | high-pass 1000 pc | -1.08 | -6.8 [-9.2, -4.2] | 0.27 [0.25, 0.29] | 1201 |
-| 5.3" | rotation model | -1.63 | -8.4 [-12.9, -5.1] | 0.17 [0.16, 0.18] | 1161 |
-| 5.3" | none | -0.89 | -9.0 [-15.3, -4.0] | 0.14 [0.12, 0.14] | 687 |
-| 5.3" | high-pass 500 pc | -1.16 | -10.5 [-13.8, -4.1] | 0.19 [0.17, 0.20] | 554 |
-| 5.3" | high-pass 1000 pc | -1.45 | -10.1 [-14.7, -5.4] | 0.18 [0.17, 0.19] | 620 |
+| 21.4" | rotation model | -0.12 | -1.0 [-2.0, +0.2] | 0.45 [0.37, 0.53] | 465 |
+| 21.4" | none | +0.04 | -2.0 [-3.8, +0.1] | 0.15 [0.06, 0.25] | 404 |
+| 21.4" | high-pass 500 pc | -0.24 | -1.0 [-1.7, -0.2] | 0.57 [0.51, 0.64] | 406 |
+| 21.4" | high-pass 1000 pc | -0.25 | -1.5 [-2.3, -0.7] | 0.49 [0.43, 0.56] | 268 |
+| 8.2" | rotation model | -1.16 | -2.3 [-3.8, -0.9] | 0.17 [0.14, 0.20] | 429 |
+| 8.2" | none | -0.18 | -2.2 [-3.9, -0.6] | 0.09 [0.06, 0.13] | 326 |
+| 8.2" | high-pass 500 pc | -0.94 | -1.4 [-2.8, -0.0] | 0.21 [0.18, 0.24] | 290 |
+| 8.2" | high-pass 1000 pc | -1.08 | -2.0 [-3.2, -0.8] | 0.19 [0.16, 0.23] | 230 |
+| 5.3" | rotation model | -1.63 | -3.0 [-4.7, -1.3] | 0.17 [0.15, 0.18] | 1137 |
+| 5.3" | none | -0.89 | -2.6 [-4.3, -1.2] | 0.12 [0.10, 0.13] | 317 |
+| 5.3" | high-pass 500 pc | -1.16 | -1.8 [-3.6, -0.2] | 0.18 [0.17, 0.20] | 424 |
+| 5.3" | high-pass 1000 pc | -1.45 | -2.6 [-4.1, -1.3] | 0.17 [0.16, 0.19] | 266 |
 
 Divergence in km/s/kpc, with the 68% wedge-bootstrap interval. The all-pixel
 median is the control over the whole aperture.
@@ -202,44 +208,105 @@ annulus, km/s/kpc):
 
 | Subtraction | CO-bright | control (all pixels) |
 |-------------|----------:|---------------------:|
-| rotation model | +7.2 to -12.3 | +3.2 to -9.2 |
-| none | +6.6 to -13.1 | +3.2 to -8.6 |
-| high-pass 500 pc | +9.5 to -5.5 | +2.7 to -3.7 |
-| high-pass 1000 pc | +9.7 to -10.1 | +4.2 to -7.0 |
+| rotation model | +5.4 to -13.0 | +3.2 to -9.2 |
+| none | +4.6 to -13.2 | +3.2 to -8.6 |
+| high-pass 500 pc | +6.1 to -6.1 | +2.7 to -3.7 |
+| high-pass 1000 pc | +6.1 to -11.1 | +4.2 to -7.0 |
 
 In all 12 epoch and mode combinations the CO-bright median goes from positive
-to negative across this boundary (drop of 4 to 20 km/s/kpc), and the control
+to negative across this boundary (drop of 8 to 18 km/s/kpc), and the control
 drops too (3 to 12).
 
 Assessment:
 
-- The steepening of CO-bright divergence with CO brightness at 8.2" and 5.3"
-  is the same in all four modes (> 7x: -5.9 to -7.4 and -8.4 to -10.5).
-  It is absent at 21.4".
+- With the mom0 map the CO-bright divergence does not steepen with CO
+  brightness. The four bins are within about 1 km/s/kpc of each other in every
+  mode (5.3" model: -2.8, -3.5, -3.7, -3.0) and the > 7x bin is 0.5 to 2.1
+  km/s/kpc below the all-pixel control in all 12 combinations. The CO-bright
+  gas is converging a little more than the average pixel, with no dose
+  response. The earlier steepening (-6 to -10 at > 7x) came from the `tpeak`
+  edge rim, see below.
 - Shear sensitivity agrees between the model, high-pass 500 pc and high-pass
-  1000 pc (5.3": 0.17, 0.19, 0.18; 8.2": 0.26, 0.28, 0.27). With no
-  subtraction it is 25-40% lower, so some large-scale removal is needed, but
-  the DiskFit model is not required.
+  1000 pc at 5.3" and 8.2" (5.3": 0.17, 0.18, 0.17; 8.2": 0.17, 0.21, 0.19).
+  At 21.4" the three span 0.45 to 0.57. With no subtraction it is lower than
+  with the model by 29% (5.3"), 47% (8.2") and 67% (21.4"), so some
+  large-scale removal is needed, but the DiskFit model is not required.
 - The step near 1.2 kpc is in the control and survives without a model, down
   to the 500 pc scale. It is not a rotation-model residual, and it is not
   specific to CO. What causes it is not identified.
 - The outer disk is negative from 1.5 to 3.2 kpc in all modes. At 2.5-3.2 kpc
-  (5.3") the CO-bright median is about 3 to 4 km/s/kpc below the control in
-  all four.
-- Model-dependent results: the 21.4" > 7x bin changes sign with the model
-  (+0.5 against -1.7 to -2.9); the 600-900 pc annulus (5.3") is +3.8 with the
-  model and -0.3 to -2.6 otherwise, within errors of 4-12; and the turnover
-  radius (first zero crossing) ranges over 554-1161 pc at 5.3" and 485-1201 pc
-  at 8.2". Only the 900-1200 pc annulus is robustly positive (+6.6 to +9.7 at
-  5.3").
+  the CO-bright median is below the control in all 12 combinations (1.3 to 5.9
+  km/s/kpc; 4.2 to 5.9 at 5.3").
+- Model-dependent results: the turnover radius (first zero crossing) is 230 to
+  465 pc in 11 of 12 cases and 1137 pc for the 5.3" model. The 0-600 pc medians
+  are within a few km/s/kpc of zero, so this crossing is not well defined; the
+  1.2 kpc step is the better-defined feature. The 600-900 pc annulus at 5.3" is
+  +5.9 with the model, +4.7 with none, +3.7 for high-pass 1000 pc and +0.1 for
+  high-pass 500 pc. The 900-1200 pc annulus is positive in all four (+4.6 to
+  +6.1).
+- The 0-600 pc medians depend on the CO map: at 8.2" with the model they are
+  +5.2 and +5.4 with `tpeak` and +2.0 and -0.2 with mom0. A positive
+  divergence inside 600 pc is not robust.
 - The all-pixel median is negative in every mode at 8.2" and 5.3" (-0.2 to
   -1.6) and more negative at higher resolution. Even the high-pass gives
-  -1.2 to -1.5 at 5.3", so this offset is not a model residual either.
-- Shear sensitivity depends on resolution in every mode: `rel_drop` is 0.17,
-  0.26 and 0.50 at 5.3", 8.2" and 21.4" (model). This is bias 8.
+  -0.9 to -1.5 at 5.3" and 8.2", so this offset is not a model residual either.
+- Shear sensitivity depends on resolution: with the model `rel_drop` is 0.45,
+  0.17 and 0.17 at 21.4", 8.2" and 5.3". The drop is between 21.4" and 8.2";
+  it does not continue to 5.3". This is bias 8. With `tpeak` the 8.2" value was
+  0.26, and the 5.3" value was unchanged. I have not separated the effect of
+  the rim from the change of threshold units.
 - The high-pass is not valid within about one kernel width of the centre, so
   the inner 500-1000 pc cannot be tested without the model. It also removes
   real flows coherent over more than the kernel, so agreement shows the signal
   is on scales below 500 pc, not that the model is correct.
-- The bootstrap intervals reflect sampling only (about +/-0.01 on `rel_drop`).
-  The spread between modes is the estimate of the systematic.
+- The bootstrap intervals reflect sampling only (about +/-0.01 on `rel_drop`
+  at 5.3"). The spread between modes is the estimate of the systematic.
+
+### Edge rim in the `broad_tpeak` CO map
+
+The first Test 2(b) run used the 8" `broad_tpeak` map (K) with a base
+threshold of 0.1 K. It showed divergence steepening with CO brightness at 8.2"
+and 5.3" (> 7x: -5.9 to -10.5 km/s/kpc in all four modes). Rerunning with
+`strict_mom0` removed it. The cause is the footprint edge of the `tpeak` map.
+
+- `tpeak` is a peak (maximum) statistic, so noise biases it upward, and the
+  noise is largest at the coverage edge. The median `tpeak` is 1.05 K in the
+  outermost pixel and 0.08 K in the interior; 98% of pixels within 2 pixels
+  of the edge exceed the 2x cut and 33% of the outermost ring exceeds the 7x
+  cut. `broad_etpeak` is about 8 times higher in the rim (0.24 K against
+  0.03 K). `strict_mom0` is zero there, with under 0.4% of the outermost ring
+  above either cut. The two maps have the same footprint.
+- The rim supplies a large share of the CO-bright sample (8.2", r < 4 kpc),
+  against 4.9% of all CO-covered pixels:
+
+| Map | Selection | Pixels | Within 100 pc of the edge |
+|-----|-----------|-------:|--------------------------:|
+| `tpeak` | CO > 2x | 17516 | 33% |
+| `tpeak` | CO > 7x | 747 | 27% |
+| `strict_mom0` | CO > 2x | 47582 | 0.2% |
+| `strict_mom0` | CO > 7x | 20738 | 0.3% |
+
+- The rim pixels have a much more negative divergence. For `tpeak` > 7x the
+  median is -11.5 km/s/kpc within 100 pc of the edge (n=194) and -3.5 beyond
+  (n=546). This is consistent with gradients at the edge of the HI map, or
+  the HI and CO footprints, but I did not test the cause.
+- Excluding CO within 100 pc of the edge (8.2", rotation model, median
+  divergence per bin, km/s/kpc):
+
+| CO bin | `tpeak` | `tpeak`, edge excluded | `strict_mom0` |
+|--------|--------:|-----------------------:|--------------:|
+| 2x-3x | -1.0 | -2.1 | -1.9 |
+| 3x-4x | -1.4 | -2.9 | -2.7 |
+| 4x-7x | -3.4 | -1.5 | -2.6 |
+| > 7x | -6.1 | -3.5 [-8.0, -0.3] | -2.3 |
+
+  The `tpeak` steepening disappears and the bins match mom0. Excluding 200 pc
+  gives the same, and mom0 is unchanged by the exclusion.
+- The 7m peak map used in `FINDINGS.md` has no rim: 0.4% of its CO > 2x pixels
+  and none of its CO > 7x pixels lie within 100 pc of the edge. The steepening
+  in those results is not explained by this artefact, and it has not been
+  retested.
+- Limits: this was run only at 8.2" in rotation-model mode, as an ad hoc
+  script that is not in the repo. Any peak-type CO map used with a fixed
+  threshold needs its footprint edge masked. This also bears on bias 6
+  (threshold) and bias 9 (mask edges).

@@ -113,6 +113,65 @@ class FlowAnalysis:
         self.radius, self.azimuth = polar_grid(self.flow.divergence.shape)
         return self
 
+    # ---- alternative large-scale subtractions ---------------------------
+    def set_velocity_mode(
+        self,
+        mode: str = "model",
+        highpass_fwhm_pc: float = 750.0,
+        edge_erode_pix: int = 0,
+    ) -> "FlowAnalysis":
+        """Recompute the velocity field and gradients with another subtraction.
+
+        Replaces ``velocity_deproj`` and ``flow`` in place; every ``result_*``
+        / ``radial_*`` / ``shear_sensitivity`` call afterwards uses the new
+        field.  CO, moment-0 and the polar grid are untouched.
+
+        Parameters
+        ----------
+        mode : str
+            ``"model"`` -- moment-1 minus the rotation model (what
+            :meth:`run` does).  ``"raw"`` -- moment-1 with only its median
+            removed (a constant, so gradients are those of the unsubtracted
+            field).  ``"highpass"`` -- the raw field minus a Gaussian
+            low-pass of itself (:func:`exgal_flows.flows.highpass_velocity_field`),
+            a model-free removal of everything smoother than the kernel.
+        highpass_fwhm_pc : float
+            FWHM (pc, in the galaxy plane) of the low-pass that the
+            ``"highpass"`` mode subtracts.
+        edge_erode_pix : int
+            Blank this many pixels inward from every edge of the valid
+            footprint.  Deprojection zero-fills blanked pixels before
+            interpolating, which leaves spurious gradients at footprint
+            edges; these are far larger for the unsubtracted field than for
+            a residual, so use the same erosion for every mode you compare.
+            ``0`` (default) reproduces :meth:`run` exactly for ``"model"``.
+        """
+        gal = self.config.galaxy
+        maps = self.maps
+        if mode not in ("model", "raw", "highpass"):
+            raise ValueError(f"unknown velocity mode {mode!r}")
+        # release the previous (large) fields before building new ones
+        self.velocity_deproj = None
+        self.flow = None
+
+        if mode == "model":
+            v = deproject(maps.mom1 - maps.model1, gal)
+        else:
+            m1 = maps.mom1
+            v = deproject(m1 - np.nanmedian(m1.value) * m1.unit, gal)
+            if mode == "highpass":
+                v = _flows.highpass_velocity_field(v, self._sigma_pix(highpass_fwhm_pc))
+
+        if edge_erode_pix > 0:
+            from scipy import ndimage as nd
+
+            good = nd.binary_erosion(np.isfinite(v), iterations=int(edge_erode_pix))
+            v[~good] = np.nan
+
+        self.velocity_deproj = v * u.km / u.s
+        self.flow = _flows.velocity_gradients(self.velocity_deproj, maps.pixel_scale_pc, gal)
+        return self
+
     # ---- physical <-> pixel conversions ---------------------------------
     @property
     def pixel_scale_pc(self) -> float:
