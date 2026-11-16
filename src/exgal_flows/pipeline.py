@@ -15,6 +15,7 @@ hidden, and thin ``result_*`` methods return the headline numbers.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -445,6 +446,98 @@ class FlowAnalysis:
             "block_pc": ana.block_pc,
             "pixel_scale_pc": px_dec,
         }
+
+    # ---- null test: displaced CO map ------------------------------------
+    # Each transform returns a *view* of the deprojected CO map (negative
+    # strides, no data copied).  The polar grid is centred at (ny/2, nx/2)
+    # while reversing an axis reflects about (n-1)/2, so the displaced map is
+    # centred half a pixel off per axis.  That is far below every annulus
+    # width and irrelevant for a test that only needs to break the local
+    # CO-to-velocity correspondence while keeping the radial distribution.
+    _NULL_VIEWS = {
+        "rot180": lambda a: a[::-1, ::-1],
+        "mirror_major": lambda a: a[:, ::-1],  # major axis is axis 0 after deprojection
+        "mirror_minor": lambda a: a[::-1, :],
+    }
+
+    @contextmanager
+    def _co_replaced(self, co):
+        """Temporarily make ``co`` the CO map every statistics method reads."""
+        original = self.co_deproj
+        self.co_deproj = co
+        try:
+            yield
+        finally:
+            self.co_deproj = original
+
+    def null_test_chance_alignment(
+        self, mode: str = "rot180", decim: int = 1, co_factor: float = 2.0
+    ) -> _stats.NullTestResult:
+        """Chance-alignment null test: rerun the CO-divergence results on a
+        displaced CO map and compare with the real one and with a control.
+
+        CO and the gradient field share large-scale structure (arms,
+        radius).  Rotating the deprojected CO map by 180 degrees about the
+        galaxy centre (or mirroring it) preserves the radial distribution of
+        CO but not its local correspondence with the velocity field, so the
+        CO-bright medians should fall to the control -- the median divergence
+        of all pixels with CO coverage in the same annulus.
+
+        Existing steps are reused: the displaced map is a view that is
+        swapped in for ``co_deproj`` while :meth:`result_divergence_of_co`
+        and :meth:`radial_divergence_profile` run, then restored.  The
+        velocity, gradient and polar fields are not recomputed or copied.
+
+        Parameters
+        ----------
+        mode : str
+            ``"rot180"`` (default), ``"mirror_major"`` (reflect across the
+            galaxy major axis) or ``"mirror_minor"``.
+        decim : int
+            Decimation stride, as for the other ``result_*`` methods.
+        co_factor : float
+            CO-brightness cut for the radial profile, as a multiple of
+            ``co_threshold_K`` (see :meth:`radial_divergence_profile`).
+
+        Returns
+        -------
+        exgal_flows.statistics.NullTestResult
+        """
+        if mode not in self._NULL_VIEWS:
+            raise ValueError(
+                f"unknown null mode {mode!r}; choose from {sorted(self._NULL_VIEWS)}"
+            )
+        real_bins = self.result_divergence_of_co(decim)
+        real_profile = self.radial_divergence_profile(decim, co_factor)
+
+        co_null = self._NULL_VIEWS[mode](np.asarray(self.co_deproj))
+        with self._co_replaced(co_null):
+            null_bins = self.result_divergence_of_co(decim)
+            null_profile = self.radial_divergence_profile(decim, co_factor)
+
+        # Control: every pixel with CO coverage (real map), same aperture.
+        px = self.maps.pixel_scale_pc
+        sl = (slice(None, None, decim), slice(None, None, decim))
+        div = self.flow.divergence.value[sl]
+        rad = self.radius[sl]
+        sel = (
+            np.isfinite(np.asarray(self.co_deproj)[sl])
+            & np.isfinite(div)
+            & (rad < self._radius_max_pix)
+        )
+        control_div = div[sel] * 1000.0  # km/s/kpc
+        control_rad_pc = rad[sel] * px
+        return _stats.NullTestResult(
+            mode=mode,
+            real_bins=real_bins,
+            null_bins=null_bins,
+            real_profile=real_profile,
+            null_profile=null_profile,
+            control_medians=_stats.median_in_annuli(
+                control_div, control_rad_pc, real_profile.r_edges
+            ),
+            control_overall=float(np.nanmedian(control_div)),
+        )
 
     def resolution_study(self, decim: int = 1):
         """Repeat the shear/divergence curves at each smoothing scale.

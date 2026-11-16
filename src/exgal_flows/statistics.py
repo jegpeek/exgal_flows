@@ -442,6 +442,73 @@ def tiled_block_bootstrap_radial_profile(
     )
 
 
+def median_in_annuli(
+    divergence: np.ndarray, radius_pc: np.ndarray, r_edges: np.ndarray
+) -> np.ndarray:
+    """Point-estimate median of ``divergence`` in each radial annulus.
+
+    Uses the same ``np.digitize`` annulus assignment as
+    :func:`tiled_block_bootstrap_radial_profile`, so the result lines up
+    element-for-element with ``RadialProfile.medians``.  Empty annuli are NaN.
+    """
+    r_edges = np.asarray(r_edges, float)
+    ann = np.digitize(radius_pc, r_edges) - 1
+    out = np.full(len(r_edges) - 1, np.nan)
+    for a in range(out.size):
+        in_ann = ann == a
+        if np.any(in_ann):
+            out[a] = np.nanmedian(divergence[in_ann])
+    return out
+
+
+@dataclass
+class NullTestResult:
+    """CO-bright divergence with the real CO map and with a displaced copy.
+
+    The displaced CO map (rotated or mirrored) keeps the radial distribution
+    of CO but destroys its local correspondence with the velocity field.  If
+    the real result is only chance alignment of shared large-scale structure,
+    the null results should match the real ones.
+
+    Attributes
+    ----------
+    mode : str
+        How the CO map was displaced (``"rot180"``, ``"mirror_major"``,
+        ``"mirror_minor"``).
+    real_bins, null_bins : DivergenceResult
+        Median divergence per CO-brightness bin, real and displaced CO.
+    real_profile, null_profile : RadialProfile
+        Radial profile of CO-bright divergence, real and displaced CO.
+    control_medians : numpy.ndarray
+        Median divergence (km/s/kpc) of *all* pixels with finite CO coverage
+        in each annulus of the radial profile (point estimate).
+    control_overall : float
+        The same median over the whole analysis aperture.
+    """
+
+    mode: str
+    real_bins: DivergenceResult
+    null_bins: DivergenceResult
+    real_profile: RadialProfile
+    null_profile: RadialProfile
+    control_medians: np.ndarray
+    control_overall: float
+
+    @property
+    def real_excess(self) -> np.ndarray:
+        """Real CO-bright median minus the control, per annulus (km/s/kpc)."""
+        return self.real_profile.medians - self.control_medians
+
+    @property
+    def null_excess(self) -> np.ndarray:
+        """Displaced-CO median minus the control, per annulus (km/s/kpc).
+
+        Consistent with zero when the CO-divergence link is not produced by
+        chance alignment.
+        """
+        return self.null_profile.medians - self.control_medians
+
+
 @dataclass
 class GradientCurveCI:
     """CO-bright fraction vs a gradient axis, with a block-bootstrap band.
