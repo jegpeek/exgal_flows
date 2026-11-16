@@ -1,0 +1,34 @@
+# M33 config for using the CO(2-1) *integrated-intensity* (mom0) map as the
+# "CO" input instead of a peak-temperature map.  Identical to config/m33.yaml
+# (new HI epoch, VLA A+B+C+D+GBT) except for the CO threshold.
+#
+# UNITS: the field is still called `co_threshold_K` (the code compares the CO
+# map against it without caring about units), but for a mom0 map the value is
+# in K km/s, not K.  The tpeak threshold of 0.6 K is NOT transferable.
+#   threshold 2.0 K km/s  ->  CO-brightness bins (x co_factor_bins) of
+#   4, 6, 8, 14 K km/s.
+# Native 8" CO map pixel counts above each bin (strict mom0): 2x: 2491,
+# 3x: 1105, 4x: 544, 7x: 113 -- the >7x bin is thin, so expect wide errors there.
+
+galaxy:
+  name: M33
+  inclination_deg: 55.08
+  position_angle_deg: 201.12
+  center_ra_deg: 23.4607
+  center_dec_deg: 30.6583
+  distance_kpc: 840.0
+
+analysis:
+  co_threshold_K: 2.0         # K km/s for the mom0 map (was 0.6 K for tpeak)
+  hi_col_to_surfdens: 0.0196  # K km/s -> Msun/pc^2 (optically thin 21cm)
+  radius_max_pc: 4000.0       # whole molecular disk; see config/m33.yaml + FINDINGS.md
+  smoothing_fwhm_pc: [0.0, 14.4, 28.8, 57.5, 86.3]
+  grad_bin_width: 0.01        # km/s/pc
+  shear_range: [0.0, 0.2]     # km/s/pc
+  div_range: [-0.2, 0.2]      # km/s/pc
+  n_wedges: 8
+  n_boot: 1000
+  co_factor_bins: [2.0, 3.0, 4.0, 7.0]   # CO-brightness bins in units of threshold
+  random_seed: 0
+  radial_edges_pc: [0.0, 300.0, 600.0, 900.0, 1200.0, 1500.0, 2000.0, 2500.0, 3200.0, 4000.0]
+  block_pc: 300.0
