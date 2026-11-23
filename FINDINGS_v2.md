@@ -79,7 +79,8 @@ Two things to know about the CO selection in this run:
 - At native resolution the fraction peaks near zero divergence (about 0.105)
   and falls to about 0.035 at both -200 and +200 km/s/kpc.
 - This two-sided fall is larger than the fall with |shear|. See bias 4 below.
-- The curves at 58 and 86 pc smoothing are noisy and the outer bins are empty.
+- The 58 and 86 pc curves in the first run were spiky because of a smoothing
+  bug that discarded most of the map. Fixed; see "Smoothing fix" below.
 
 ## Observational biases and the tests that would check them
 
@@ -112,8 +113,14 @@ Amplitudes are line-of-sight gradients. In-plane values are larger by
 - CO coverage-edge rim in `broad_tpeak`: found and quantified at 8.2" in
   rotation-model mode. `strict_mom0` and the 7m peak map are not affected.
   The other epochs were not rerun with `tpeak`.
-- Test 9: `edge_erode_pix` is implemented but not yet compared.
+- Test 9: `edge_erode_pix` is implemented but not yet compared. The smoothing
+  half of the mask-edge problem is fixed (see "Smoothing fix"); the
+  deprojection zero-fill is unchanged.
 - Test 5 (chance alignment): run, see below.
+- Shear robustness (HI Laplacian sign, HI dispersion, displaced CO): run, see
+  below.
+- Test 7 (CO coverage): partly done. Restricting Result 3 to CO-covered
+  pixels changes the amplitude, not the shape (see "Shear robustness").
 - All other tests are not started.
 
 ### Test 5: chance-alignment null (8" CO mom0, `decim=2`)
@@ -310,3 +317,104 @@ and 5.3" (> 7x: -5.9 to -10.5 km/s/kpc in all four modes). Rerunning with
   script that is not in the repo. Any peak-type CO map used with a fixed
   threshold needs its footprint edge masked. This also bears on bias 6
   (threshold) and bias 9 (mask edges).
+
+### Shear robustness (`notebooks/shear_robustness.ipynb`, 8" CO mom0, `decim=2`)
+
+Checks on "shear suppresses CO" from Josh's beam-smearing question. Each is a
+pixel selection (`sel=`) or a displaced CO map (`co_mode=`) passed to
+`result_co_vs_shear`, `resolution_study` and `shear_sensitivity`. `rel_drop` =
+1 - (high-|shear| / low-|shear| CO-bright fraction), with the azimuthal wedge
+block bootstrap (68%). Baseline: 0.24 [0.22, 0.26].
+
+**A. HI Laplacian sign** (∇²Σ_HI from mom0 smoothed to 50 pc; ∇² < 0 = HI
+ridges, ∇² > 0 = troughs and the flanks of column jumps):
+
+| Selection | Pixels kept | Low-shear CO fraction | `rel_drop` |
+|-----------|------------:|----------------------:|-----------:|
+| ∇² > 0 | 0.56 | 0.062 | 0.27 [0.25, 0.29] |
+| ∇² < 0 | 0.44 | 0.161 | 0.14 [0.12, 0.17] |
+
+- The trend survives on both sides. It is stronger where ∇² > 0, which allows
+  some contribution from blending across HI jumps but does not account for the
+  trend.
+- Laplacian smoothing scale (native / 25 / 50 / 100 pc): ∇² > 0 is stable
+  (0.24 / 0.27 / 0.27 / 0.27). ∇² < 0 weakens (0.25 / 0.18 / 0.14 / 0.13).
+
+**B. HI velocity dispersion** (strict mom2, observed, tertiles over the
+aperture with CO coverage: 4.45 and 6.49 km/s):
+
+| σ_HI [km/s] | Low-shear CO fraction | `rel_drop` |
+|-------------|----------------------:|-----------:|
+| < 4.45 | 0.041 | 0.41 [0.38, 0.43] |
+| 4.45-6.49 | 0.123 | 0.29 [0.27, 0.31] |
+| > 6.49 | 0.196 | 0.22 [0.20, 0.24] |
+
+- The suppression is strongest at *low* dispersion, where blended or offset
+  components should matter least. Beam smearing between components does not
+  produce the trend.
+- The CO-bright fraction rises steeply with σ_HI.
+
+**C. Displaced CO** (same transforms as Test 5):
+
+| CO map | `rel_drop` |
+|--------|-----------:|
+| real | 0.24 [0.22, 0.26] |
+| `rot180` | 0.03 [0.02, 0.04] |
+| `mirror_major` | -0.04 [-0.06, -0.02] |
+| `mirror_minor` | 0.02 [0.00, 0.03] |
+
+Within annuli (real vs `rot180`):
+
+| Annulus [pc] | real | `rot180` |
+|--------------|-----:|---------:|
+| 0-900 | 0.19 [0.16, 0.21] | -0.01 [-0.05, 0.04] |
+| 900-1500 | 0.19 [0.16, 0.24] | -0.04 [-0.08, 0.01] |
+| 1500-2500 | 0.29 [0.26, 0.32] | 0.08 [0.03, 0.12] |
+| 2500-4000 | 0.24 [0.22, 0.27] | 0.03 [-0.02, 0.06] |
+
+- Displacing the CO removes the trend, globally and within each annulus. The
+  shear suppression is a local CO-velocity correspondence, not shared radial
+  structure. The 1500-2500 pc `rot180` residual (0.08) is the only displaced
+  value whose interval excludes zero.
+
+**CO coverage (bias 7).** Restricting Result 3 to pixels with CO coverage
+raises the fractions by about 20% (native divergence peak 0.105 → 0.127)
+without changing the curve shapes. About 17% of the aperture has HI but no CO
+coverage.
+
+### Smoothing fix: NaN spreading in the resolution study
+
+`flows.smoothed_velocity_field` ran `gaussian_filter` on arrays containing
+blanks, so each isolated blank pixel became a NaN square ~8σ on a side
+(~200 pc at 58 pc FWHM, ~300 pc at 86 pc). Valid pixels in the aperture
+(`decim=2`):
+
+| FWHM [pc] | 0 | 14 | 29 | 58 | 86 |
+|-----------|--:|---:|---:|---:|---:|
+| before | 1.21M | 1.01M | 0.84M | 0.54M | 0.31M |
+| after | 1.21M | 1.21M | 1.21M | 1.21M | 1.21M |
+
+Before the fix, at 86 pc the surviving area was slivers between the squares.
+The bins at |div| ≈ 60-130 km/s/kpc held ~10²-10³ pixels, about 1-5
+independent beams, and the CO fraction in them spiked to 0.2-0.35. Blanks now
+get zero weight in both `smooth(mom0·v)` and `smooth(mom0)`, so values are not
+pulled toward zero. Pixels with less than `smoothing_min_coverage` = 0.5 of
+the kernel on valid data are blanked (commit `c03829f`).
+
+After the fix:
+
+- **Divergence:** a single peak near zero divergence persists at every scale,
+  about 0.105 at native resolution and about 0.097 at 58 and 86 pc. At
+  29-86 pc the peak sits slightly on the converging side, around
+  -25 km/s/kpc (by eye; one bin is 10 km/s/kpc). The large-FWHM spikes are
+  gone.
+- **Divergence, outer bins:** at 58-86 pc the curves still step down to ~0.01
+  beyond |div| ≈ 100 km/s/kpc. Those bins hold ~10³ pixels, about 5
+  independent 86 pc beams, so they should not be read bin by bin.
+- **Shear:** the CO-bright fraction falls with |shear| at every scale and in
+  every dispersion tertile. It appears steeper at 86 pc (about 0.09 → 0.01
+  over 0-200 km/s/kpc, by eye) than at native resolution (0.10 → 0.05). Pixel
+  counts in the high-|shear| bins at large FWHM have not been checked.
+- **Not yet rerun:** Result 3 in the other notebooks, the smoothing panel of
+  the `shear_sensitivity` figure, and every number above that predates
+  `c03829f` at 29-86 pc. The deprojection zero-fill (bias 9) is unchanged.
