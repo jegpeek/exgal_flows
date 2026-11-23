@@ -1,8 +1,10 @@
 # Findings v2: rerun with the 8" CO(2-1) integrated-intensity map
 
-This note summarises `notebooks/reproduce_results_check_co_mom0.ipynb`
-(branch `check`) and lists the observational biases that still need testing.
-It supplements `FINDINGS.md`; it does not replace it.
+This note summarises `notebooks/reproduce_results_check_co_mom0.ipynb`, the
+checks in `notebooks/highpass_check.ipynb` and `notebooks/shear_robustness.ipynb`,
+and lists the observational biases that still need testing. It supplements
+`FINDINGS.md`; it does not replace it. Work is on branch
+`null-test-chance-alignment` (the first run was on `check`).
 
 ## What was run
 
@@ -12,6 +14,7 @@ It supplements `FINDINGS.md`; it does not replace it.
 | HI (old, shear epoch panel only) | `HI/17B/M33_14B_17B_..._GBT_feathered_K.mom{0,1}.fits` (8.2") |
 | Rotation model | `rot_model/rad.mod.fits` (DiskFit, peak velocities, no warp, no radial flow) |
 | CO | `CO/m33_all_co21_2p5kms_8p0as_aligned_strict_mom0.fits` (8", K km/s) |
+| HI dispersion (shear robustness only) | `HI/lglbs_ABCD/m33_A+B+C+D+GBT_hi21cm_strict_mom2.fits` (km/s) |
 | Config | `config/m33.yaml` |
 
 Two things to know about the CO selection in this run:
@@ -20,9 +23,9 @@ Two things to know about the CO selection in this run:
   of 0.6, now applied to a map in K km/s. The bins are therefore 1.2, 1.8, 2.4
   and 4.2 K km/s on the `cos i`-scaled map (2.1, 3.1, 4.2 and 7.3 K km/s on the
   sky). `config/m33_co_mom0.yaml` (threshold 2.0) exists but is commented out.
-- The CO-intensity panel of the shear figure hard-codes `co_threshold=2.0 * f`
-  (4, 6, 8, 14 K km/s), so that one panel uses different cuts from everything
-  else. Its `CO>7x` curve has too few pixels to read.
+- The CO-intensity panel of the shear figure uses the same threshold,
+  `co_threshold_K * f` for f = 2, 3, 4, 7. Its `CO>7x` curve is the noisiest,
+  with a wide bootstrap band.
 
 ## Results
 
@@ -95,7 +98,7 @@ median divergence of all pixels with CO coverage in the same annulus.
 | 4 | **Noisy gradients mimic suppression.** Large |gradient| pixels are likely low signal-to-noise HI, where CO is also rarer. The CO fraction falls with |divergence| on both sides at least as fast as with |shear|, which suggests the decline is not specific to shear. | (a) Compare the |shear| and |divergence| curves directly. (b) Repeat after cutting on the moment-1 error map (`strict_emom1`). (c) Repeat within narrow bins of HI moment-0. |
 | 5 | **Chance alignment.** CO and the gradient field share large-scale structure (arms, radius). | Null test: mirror or rotate the CO map by 180° about the centre and rerun. Radial distributions are preserved, local correspondence is not, so the CO medians should fall to the control. |
 | 6 | **CO threshold.** The cut is a fixed value tuned on another map, in different units, and scaled by `cos i`. Fixed cuts on a map with varying noise select by sensitivity. | Define CO-bright by signal-to-noise using `strict_emom0`, and repeat with the 7m peak map, the 8" `tpeak` map and the 8" mom0 map at matched pixel fractions. |
-| 7 | **CO coverage in the denominator.** `result_co_vs_shear` and `resolution_study` mask on radius only, so pixels without CO coverage count as CO-dark. | Recompute both with a finite-CO mask and compare the fractions. |
+| 7 | **CO coverage in the denominator.** `result_co_vs_shear` and `resolution_study` mask on radius only, so pixels without CO coverage count as CO-dark. `shear_sensitivity` already requires CO coverage, so every `rel_drop` in this note is a CO-covered value; only the fraction curves (Results 2 and 3) are affected. | Recompute both with a finite-CO mask and compare the fractions. |
 | 8 | **Resolution mismatch.** CO is 8" (33 pc), new HI is 5.3" (22 pc), and deprojection stretches the beam 1.74x along x. Smoothing kernels of 14 and 29 pc are at or below the HI beam. | Use the 8.2" HI epoch as the matched-resolution case for all results, not only the shear panel. Quote smoothing scales as the quadrature sum with the beam. |
 | 9 | **Mask-edge artefacts.** Blanked pixels are zero-filled before interpolation, which creates false gradients at footprint edges and moment-1 holes. | Rerun with `edge_erode_pix=3` and compare. |
 | 10 | **Moment-1 as the velocity tracer.** Multiple components, self-absorption and feedback shells shift moment-1 where CO is bright, and vertical motions enter with weight `cos i`. | (a) Repeat with an HI peak-velocity or fitted-centroid map. (b) Mask known HII regions and shells and rerun. (c) Compare CO moment-1 with HI moment-1 at CO-bright pixels. |
@@ -113,14 +116,20 @@ Amplitudes are line-of-sight gradients. In-plane values are larger by
 - CO coverage-edge rim in `broad_tpeak`: found and quantified at 8.2" in
   rotation-model mode. `strict_mom0` and the 7m peak map are not affected.
   The other epochs were not rerun with `tpeak`.
-- Test 9: `edge_erode_pix` is implemented but not yet compared. The smoothing
-  half of the mask-edge problem is fixed (see "Smoothing fix"); the
-  deprojection zero-fill is unchanged.
+- Test 9: `edge_erode_pix` is implemented but not yet compared. Test 2(b) used
+  `edge_erode_pix=3` for every mode; the main run and `shear_robustness` use 0.
+  The smoothing half of the mask-edge problem is fixed (see "Smoothing fix");
+  the deprojection zero-fill is unchanged.
 - Test 5 (chance alignment): run, see below.
 - Shear robustness (HI Laplacian sign, HI dispersion, displaced CO): run, see
   below.
 - Test 7 (CO coverage): partly done. Restricting Result 3 to CO-covered
   pixels changes the amplitude, not the shape (see "Shear robustness").
+- Test 4 (noisy gradients): not started, but 4(b) and 4(c) now only need a
+  `sel=` mask. For 4(b), load `strict_emom1` through `extra_paths` and cut it
+  with `selection_mask`'s range option (named `dispersion_*`, but it works on
+  any extra map). For 4(c), mask on ranges of HI mom0. Checks A and B below
+  do not test bias 4.
 - All other tests are not started.
 
 ### Test 5: chance-alignment null (8" CO mom0, `decim=2`)
@@ -179,6 +188,9 @@ Assessment:
   1-2 km/s/kpc quoted for bias 2.
 - The aperture control is not radially matched to CO-bright pixels. Use
   `rot180` as the matched comparison for the bins.
+- The same displacements remove the shear trend completely (`rel_drop` within
+  ±0.04 of zero, see "Shear robustness", check C). The local CO-flow
+  correspondence is isolated for shear but not for divergence.
 - Next: many displacements (arbitrary angles, random shifts) to build a null
   distribution, tests 2(a) and 2(b), and an error band on the control.
 
@@ -354,6 +366,13 @@ aperture with CO coverage: 4.45 and 6.49 km/s):
   produce the trend.
 - The CO-bright fraction rises steeply with σ_HI.
 
+**What A and B do not test.** They rule out blending of offset components as
+the cause of the trend. They do not test bias 4 (noisy gradients in faint HI).
+The trend is strongest where ∇² > 0 (troughs, lower column) and in the lowest
+σ_HI tertile, which has the lowest CO fraction. If those are also where the HI
+is faintest, that is what bias 4 predicts. Whether they are has not been
+checked.
+
 **C. Displaced CO** (same transforms as Test 5):
 
 | CO map | `rel_drop` |
@@ -374,8 +393,12 @@ Within annuli (real vs `rot180`):
 
 - Displacing the CO removes the trend, globally and within each annulus. The
   shear suppression is a local CO-velocity correspondence, not shared radial
-  structure. The 1500-2500 pc `rot180` residual (0.08) is the only displaced
-  value whose interval excludes zero.
+  structure. This contrasts with Test 5, where the displaced maps reproduce
+  the divergence results.
+- The displaced values all lie within ±0.04 of zero globally, and some of
+  their intervals exclude zero (`rot180`, `mirror_major`). The intervals
+  reflect sampling only (8 wedges), so ±0.04 is effectively the null scatter.
+  The largest residual is `rot180` at 1500-2500 pc (0.08).
 
 **CO coverage (bias 7).** Restricting Result 3 to pixels with CO coverage
 raises the fractions by about 20% (native divergence peak 0.105 → 0.127)
@@ -415,6 +438,12 @@ After the fix:
   every dispersion tertile. It appears steeper at 86 pc (about 0.09 → 0.01
   over 0-200 km/s/kpc, by eye) than at native resolution (0.10 → 0.05). Pixel
   counts in the high-|shear| bins at large FWHM have not been checked.
+- **More exposed to bias 9:** pixels next to blanks carry values that
+  deprojection blended toward zero. Before the fix the NaN squares hid them
+  at large FWHM; now they are averaged in. The 29-86 pc curves are therefore
+  more exposed to the deprojection zero-fill than before, and Test 9 matters
+  more.
 - **Not yet rerun:** Result 3 in the other notebooks, the smoothing panel of
-  the `shear_sensitivity` figure, and every number above that predates
-  `c03829f` at 29-86 pc. The deprojection zero-fill (bias 9) is unchanged.
+  the `shear_sensitivity` figure, every number above that predates `c03829f`
+  at 29-86 pc, and the smoothed results in `FINDINGS.md` (Result 3 and
+  Result 4c, now marked as superseded there).
