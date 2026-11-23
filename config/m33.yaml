@@ -24,6 +24,7 @@ analysis:
   # notebook's inner-disk aperture exactly.
   radius_max_pc: 4000.0        # analysis radius (notebook rmax=300 pix @ 3.05 pc/pix)
   smoothing_fwhm_pc: [0.0, 14.4, 28.8, 57.5, 86.3]  # resolution study, FWHM in pc
+  smoothing_min_coverage: 0.5   # blank smoothed pixels with < 50% of the kernel on valid data
   grad_bin_width: 0.01        # km/s/pc bin width (ds)
   shear_range: [0.0, 0.2]     # km/s/pc
   div_range: [-0.2, 0.2]      # km/s/pc

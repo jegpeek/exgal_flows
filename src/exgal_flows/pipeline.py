@@ -390,7 +390,8 @@ class FlowAnalysis:
         # shear field (optionally from a smoothed velocity field)
         if fwhm_pc and fwhm_pc > 0:
             vsm = _flows.smoothed_velocity_field(
-                self.mom0_deproj, self.velocity_deproj, self._sigma_pix(fwhm_pc)
+                self.mom0_deproj, self.velocity_deproj, self._sigma_pix(fwhm_pc),
+                min_coverage=an.smoothing_min_coverage,
             )
             flow = _flows.velocity_gradients(vsm, px, gal)
         else:
@@ -769,7 +770,8 @@ class FlowAnalysis:
         for fwhm in ana.smoothing_fwhm_pc:
             sigma = self._sigma_pix(fwhm)
             vsm = _flows.smoothed_velocity_field(
-                self.mom0_deproj, self.velocity_deproj, sigma
+                self.mom0_deproj, self.velocity_deproj, sigma,
+                min_coverage=ana.smoothing_min_coverage,
             )
             flow = _flows.velocity_gradients(vsm, px, gal)
             sl = (slice(None, None, decim), slice(None, None, decim))

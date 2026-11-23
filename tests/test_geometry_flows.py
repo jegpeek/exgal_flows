@@ -59,6 +59,63 @@ def test_smoothed_velocity_zero_sigma_identity():
     np.testing.assert_array_equal(out, m1)
 
 
+
+def _holey_field(seed=0, n=160):
+    """Offset velocity field (far from 0) with isolated blanks and one big hole."""
+    rng = np.random.default_rng(seed)
+    yy, xx = np.mgrid[:n, :n]
+    truth = 250.0 + 0.2 * xx                       # km/s, gradient 0.2 km/s/pix
+    m1 = truth + rng.normal(0, 1.0, (n, n))
+    m0 = 50.0 + 10.0 * rng.random((n, n))
+    bad = rng.random((n, n)) < 0.002               # isolated blank pixels
+    bad[50:100, 50:100] = True                     # one large hole
+    m1[bad] = np.nan
+    m0[bad] = np.nan
+    return m0, m1, truth, bad
+
+
+def test_smoothed_velocity_blanks_get_zero_weight():
+    """Blanks drop out of the average: no bias toward 0, no NaN spreading."""
+    m0, m1, truth, bad = _holey_field()
+    out = flows.smoothed_velocity_field(m0, m1, 6.0)
+    good = ~bad
+    kept = np.isfinite(out) & good
+    # isolated blanks used to wipe out an ~8 sigma square each (the whole map
+    # here); now only the large hole's rim is lost to the coverage cut
+    assert kept.sum() / good.sum() > 0.95
+    # values stay at the 250 km/s level instead of being pulled toward 0
+    assert np.max(np.abs(out[kept] - truth[kept])) < 3.0
+    # blank pixels are not in-painted
+    assert not np.isfinite(out[bad]).any()
+    # the gradient (what divergence / shear use) is unbiased
+    gx = np.gradient(out, axis=1)
+    assert abs(np.nanmedian(gx[good]) - 0.2) < 0.01
+
+
+def test_smoothed_velocity_coverage_cut():
+    """Pixels with a mostly-masked kernel are blanked; min_coverage=0 keeps them."""
+    m0, m1, truth, bad = _holey_field()
+    strict = flows.smoothed_velocity_field(m0, m1, 6.0, min_coverage=0.9)
+    loose = flows.smoothed_velocity_field(m0, m1, 6.0, min_coverage=0.0)
+    assert np.isfinite(loose[~bad]).all()
+    lost = ~bad & np.isfinite(loose) & ~np.isfinite(strict)
+    assert lost.any()
+    # the pixels cut sit on the rim of the large hole
+    ii, jj = np.nonzero(lost)
+    rim = (ii >= 40) & (ii < 110) & (jj >= 40) & (jj < 110)
+    assert rim.mean() > 0.95
+
+
+def test_smoothed_velocity_matches_plain_smoothing_without_blanks():
+    """With no blanks the result is the plain mom0-weighted Gaussian smooth."""
+    from scipy import ndimage as nd
+    rng = np.random.default_rng(1)
+    m0 = 1.0 + rng.random((60, 60))
+    m1 = rng.normal(0, 5, (60, 60))
+    out = flows.smoothed_velocity_field(m0, m1, 3.0)
+    ref = nd.gaussian_filter(m0 * m1, 3.0) / nd.gaussian_filter(m0, 3.0)
+    np.testing.assert_allclose(out, ref, rtol=1e-12, atol=1e-12)
+
 def test_fwhm_pc_conversion():
     assert np.isclose(flows.fwhm_pc(2.0, 3.0), 2.0 * 3.0 * 2.355)
 

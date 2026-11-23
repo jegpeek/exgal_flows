@@ -137,13 +137,23 @@ def hi_laplacian(mom0_deproj, sigma_pix: float = 0.0) -> np.ndarray:
     return nd.laplace(vals)
 
 
-def smoothed_velocity_field(mom0_deproj, mom1_deproj, sigma_pix: float) -> np.ndarray:
+def smoothed_velocity_field(
+    mom0_deproj, mom1_deproj, sigma_pix: float, min_coverage: float = 0.5
+) -> np.ndarray:
     """Intensity-weighted smoothed velocity field.
 
-    Reproduces the notebook's resolution-study smoothing:
-    ``smooth(mom0 * mom1) / smooth(mom0)`` -- i.e. a moment-0-weighted
-    Gaussian smooth of the velocity, which is more robust than smoothing
-    the velocity directly where the HI is faint.
+    The resolution-study smoothing ``smooth(mom0 * mom1) / smooth(mom0)``:
+    a moment-0-weighted Gaussian smooth of the velocity, which is more
+    robust than smoothing the velocity directly where the HI is faint.
+
+    Blanked pixels get zero *weight* in both the numerator and the
+    denominator (normalized convolution), so each output pixel is the
+    weighted mean of the valid pixels under the kernel.  The placeholder
+    value under a blank never enters the average, so nothing is pulled
+    toward zero.  (Smoothing the raw arrays instead lets ``gaussian_filter``
+    spread every NaN over the kernel footprint -- a separable filter turns
+    each isolated NaN pixel into a NaN square ~8 sigma on a side -- which
+    discards most of the map at 50-100 pc FWHM.)
 
     Parameters
     ----------
@@ -151,20 +161,32 @@ def smoothed_velocity_field(mom0_deproj, mom1_deproj, sigma_pix: float) -> np.nd
         Deprojected moment-0 and moment-1 maps.
     sigma_pix : float
         Gaussian sigma in pixels.  ``0`` returns the unsmoothed velocity.
+    min_coverage : float
+        Blank output pixels where less than this fraction of the
+        (unweighted) kernel falls on valid pixels.  Those values come from
+        a strongly one-sided kernel at the edge of a large hole or of the
+        footprint.  ``0`` keeps every pixel with any valid neighbour.
 
     Returns
     -------
     numpy.ndarray
-        Smoothed velocity field (km/s, plain ndarray).
+        Smoothed velocity field (km/s, plain ndarray).  NaN where the input
+        was blank (no in-painting) or the coverage is below
+        ``min_coverage``.
     """
     m0 = np.asarray(getattr(mom0_deproj, "value", mom0_deproj), dtype=float)
     m1 = np.asarray(getattr(mom1_deproj, "value", mom1_deproj), dtype=float)
     if sigma_pix == 0:
         return m1
-    num = nd.gaussian_filter(m0 * m1, sigma_pix)
-    den = nd.gaussian_filter(m0, sigma_pix)
+    good = np.isfinite(m0) & np.isfinite(m1)
+    w = np.where(good, m0, 0.0)
+    num = nd.gaussian_filter(w * np.where(good, m1, 0.0), sigma_pix)
+    den = nd.gaussian_filter(w, sigma_pix)
+    cov = nd.gaussian_filter(good.astype(float), sigma_pix)
     with np.errstate(invalid="ignore", divide="ignore"):
-        return num / den
+        out = num / den
+    out[~good | (cov < min_coverage) | ~(den > 0)] = np.nan
+    return out
 
 
 def fwhm_pc(sigma_pix: float, pixel_scale_pc: float) -> float:
