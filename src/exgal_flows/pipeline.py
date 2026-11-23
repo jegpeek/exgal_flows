@@ -48,6 +48,8 @@ class FlowAnalysis:
     flow: _flows.FlowFields = field(default=None, repr=False)
     radius: np.ndarray = field(default=None, repr=False)
     azimuth: np.ndarray = field(default=None, repr=False)
+    # lazily deprojected ``maps.extras`` (see :meth:`extra_deproj`)
+    _extras_deproj: dict = field(default_factory=dict, repr=False)
 
     # ---- constructors ---------------------------------------------------
     @classmethod
@@ -199,6 +201,122 @@ class FlowAnalysis:
         az = self.azimuth[sl].ravel()
         return div, shear, co, rad, az
 
+    # ---- selection cuts for the shear results ---------------------------
+    def _co_map(self, co_mode: str | None = None) -> np.ndarray:
+        """Deprojected CO map, optionally displaced (see ``_NULL_VIEWS``)."""
+        co = np.asarray(self.co_deproj)
+        if co_mode is None:
+            return co
+        if co_mode not in self._NULL_VIEWS:
+            raise ValueError(
+                f"unknown co_mode {co_mode!r}; choose from {sorted(self._NULL_VIEWS)}"
+            )
+        return self._NULL_VIEWS[co_mode](co)
+
+    def _sel_ravel(self, sel, decim: int) -> np.ndarray | bool:
+        """Decimate and ravel a full-grid selection mask (``True`` if None)."""
+        if sel is None:
+            return True
+        sel = np.asarray(sel, dtype=bool)
+        if sel.shape != np.shape(self.co_deproj):
+            raise ValueError(
+                f"sel has shape {sel.shape}; expected the deprojected grid "
+                f"{np.shape(self.co_deproj)} (build it with selection_mask())"
+            )
+        return sel[::decim, ::decim].ravel()
+
+    def extra_deproj(self, label: str, inc_correction: bool = False) -> np.ndarray:
+        """Deproject ``maps.extras[label]`` onto the analysis grid (cached).
+
+        Extras are loaded with ``extra_paths={label: path}`` in
+        :meth:`from_files`.  They are deprojected on first use only, since
+        each one is a full-size map.
+
+        Parameters
+        ----------
+        label : str
+            Key of the extra map.
+        inc_correction : bool
+            Apply the ``cos i`` factor of :func:`geometry.deproject`.
+            Default False, so that a line-width map keeps its observed
+            value (a dispersion cut is a cut on what was measured).
+
+        Returns
+        -------
+        numpy.ndarray
+            Deprojected map in the extra's own units (plain ndarray).  The
+            unit is kept in ``maps.extras[label].unit``.
+        """
+        key = (label, bool(inc_correction))
+        if key not in self._extras_deproj:
+            extras = getattr(self.maps, "extras", None) or {}
+            if label not in extras:
+                raise KeyError(
+                    f"no extra map {label!r}; pass extra_paths={{{label!r}: path}} "
+                    f"to FlowAnalysis.from_files (have {sorted(extras)})"
+                )
+            self._extras_deproj[key] = np.asarray(
+                deproject(extras[label], self.config.galaxy, inc_correction=inc_correction)
+            )
+        return self._extras_deproj[key]
+
+    def selection_mask(
+        self,
+        laplacian_sign: int | None = None,
+        laplacian_fwhm_pc: float = 0.0,
+        dispersion_label: str | None = None,
+        dispersion_range_kms: tuple[float, float] | None = None,
+    ) -> np.ndarray:
+        """Full-grid boolean pixel selection for the shear results.
+
+        Pass the result as ``sel=`` to :meth:`result_co_vs_shear`,
+        :meth:`resolution_study` or :meth:`shear_sensitivity`.  All criteria
+        given are ANDed; pixels where a criterion's map is NaN are dropped.
+
+        Parameters
+        ----------
+        laplacian_sign : {+1, -1}, optional
+            Keep pixels where the Laplacian of the deprojected HI moment-0
+            is positive (troughs / flanks of HI jumps) or negative (HI
+            peaks / ridges).
+        laplacian_fwhm_pc : float
+            Gaussian FWHM (pc) to smooth moment-0 before the Laplacian.  The
+            native-resolution Laplacian is dominated by pixel noise.
+        dispersion_label : str, optional
+            Extra map holding the velocity dispersion (e.g. ``"hi_mom2"``),
+            loaded via ``extra_paths``.  Required with
+            ``dispersion_range_kms``.
+        dispersion_range_kms : (float, float), optional
+            Keep pixels with ``lo <= dispersion < hi`` (km/s, observed, no
+            ``cos i`` factor).  Use ``np.inf`` for an open upper end.
+
+        Returns
+        -------
+        numpy.ndarray
+            Boolean mask, shape of the deprojected grid.
+        """
+        sel = np.ones(np.shape(self.co_deproj), dtype=bool)
+
+        if laplacian_sign is not None:
+            if laplacian_sign not in (1, -1):
+                raise ValueError("laplacian_sign must be +1, -1 or None")
+            lap = _flows.hi_laplacian(self.mom0_deproj, self._sigma_pix(laplacian_fwhm_pc))
+            with np.errstate(invalid="ignore"):
+                sel &= np.isfinite(lap) & (lap * laplacian_sign > 0)
+
+        if dispersion_range_kms is not None:
+            if dispersion_label is None:
+                raise ValueError("dispersion_range_kms needs dispersion_label")
+            disp = self.extra_deproj(dispersion_label)
+            unit = getattr(self.maps.extras[dispersion_label], "unit", None)
+            if unit is not None and unit != u.dimensionless_unscaled:
+                disp = disp * unit.to(u.km / u.s)
+            lo, hi = dispersion_range_kms
+            with np.errstate(invalid="ignore"):
+                sel &= np.isfinite(disp) & (disp >= lo) & (disp < hi)
+
+        return sel
+
     # ---- shear sensitivity ----------------------------------------------
     def shear_sensitivity(
         self,
@@ -208,6 +326,8 @@ class FlowAnalysis:
         radius_window_pc: tuple[float, float] | None = None,
         n_boot: int = 300,
         seed: int = 0,
+        sel: np.ndarray | None = None,
+        co_mode: str | None = None,
     ):
         """CO-bright fraction as a function of |shear|, with a block bootstrap.
 
@@ -227,7 +347,11 @@ class FlowAnalysis:
         * **radial trend** -- set ``radius_window_pc=(r_lo, r_hi)`` to
           restrict to a galactocentric annulus (image-plane radius);
         * **epoch** -- build two :class:`FlowAnalysis` objects (new / old
-          config) and call this on each.
+          config) and call this on each;
+        * **pixel selection** -- pass ``sel`` from :meth:`selection_mask`
+          (HI Laplacian sign, velocity-dispersion range);
+        * **displaced CO** -- set ``co_mode`` to rotate / mirror the CO map
+          (chance-alignment null test for the shear trend).
 
         Parameters
         ----------
@@ -246,6 +370,13 @@ class FlowAnalysis:
             Number of wedge bootstrap resamples.
         seed : int
             RNG seed.
+        sel : numpy.ndarray, optional
+            Full-grid boolean pixel selection (see :meth:`selection_mask`),
+            ANDed with the aperture / annulus.
+        co_mode : str, optional
+            ``"rot180"``, ``"mirror_major"`` or ``"mirror_minor"`` to use a
+            displaced CO map (see :meth:`null_test_chance_alignment`).  The
+            shear field and ``sel`` stay in the real frame.
 
         Returns
         -------
@@ -267,7 +398,7 @@ class FlowAnalysis:
 
         sl = (slice(None, None, decim), slice(None, None, decim))
         shear = np.abs(flow.shear.value[sl].ravel())
-        co = np.asarray(self.co_deproj)[sl].ravel()
+        co = self._co_map(co_mode)[sl].ravel()
         az = self.azimuth[sl].ravel()
         rad_pc = self.radius[sl].ravel() * px
 
@@ -276,6 +407,7 @@ class FlowAnalysis:
         mask = (
             np.isfinite(shear) & np.isfinite(co) & np.isfinite(az)
             & (rad_pc >= r_lo) & (rad_pc < r_hi)
+            & self._sel_ravel(sel, decim)
         )
 
         edges = np.arange(an.shear_range[0], an.shear_range[1], an.grad_bin_width)
@@ -301,9 +433,20 @@ class FlowAnalysis:
             seed=ana.random_seed,
         )
 
-    def result_co_vs_shear(self, decim: int = 1) -> _stats.GradientCurve:
-        """CO-bright fraction vs. |shear| (shear-suppresses-CO result)."""
+    def result_co_vs_shear(
+        self,
+        decim: int = 1,
+        sel: np.ndarray | None = None,
+        co_mode: str | None = None,
+    ) -> _stats.GradientCurve:
+        """CO-bright fraction vs. |shear| (shear-suppresses-CO result).
+
+        ``sel`` (from :meth:`selection_mask`) restricts the pixels and
+        ``co_mode`` displaces the CO map; see :meth:`shear_sensitivity`.
+        """
         div, shear, co, rad, az = self._ravel(decim)
+        if co_mode is not None:
+            co = self._co_map(co_mode)[::decim, ::decim].ravel()
         ana = self.config.analysis
         edges = np.arange(ana.shear_range[0], ana.shear_range[1], ana.grad_bin_width)
         return _stats.co_fraction_vs_gradient(
@@ -311,7 +454,7 @@ class FlowAnalysis:
             co=co,
             co_threshold=ana.co_threshold_K,
             bin_edges=edges,
-            mask=rad < self._radius_max_pix,
+            mask=(rad < self._radius_max_pix) & self._sel_ravel(sel, decim),
         )
 
     def result_co_vs_divergence(self, decim: int = 1) -> _stats.GradientCurve:
@@ -598,8 +741,18 @@ class FlowAnalysis:
             control_overall=float(np.nanmedian(control_div)),
         )
 
-    def resolution_study(self, decim: int = 1):
+    def resolution_study(
+        self,
+        decim: int = 1,
+        sel: np.ndarray | None = None,
+        co_mode: str | None = None,
+    ):
         """Repeat the shear/divergence curves at each smoothing scale.
+
+        ``sel`` (from :meth:`selection_mask`) restricts the pixels and
+        ``co_mode`` displaces the CO map, for both curves at every scale;
+        see :meth:`shear_sensitivity`.  The selection is fixed (it is not
+        re-derived per smoothing scale).
 
         Returns
         -------
@@ -622,9 +775,9 @@ class FlowAnalysis:
             sl = (slice(None, None, decim), slice(None, None, decim))
             shear = np.abs(flow.shear.value[sl].ravel())
             div = flow.divergence.value[sl].ravel()
-            co = np.asarray(self.co_deproj)[sl].ravel()
+            co = self._co_map(co_mode)[sl].ravel()
             rad = self.radius[sl].ravel()
-            rmask = rad < self._radius_max_pix
+            rmask = (rad < self._radius_max_pix) & self._sel_ravel(sel, decim)
 
             sh_edges = np.arange(*ana.shear_range, ana.grad_bin_width)
             dv_edges = np.arange(*ana.div_range, ana.grad_bin_width)

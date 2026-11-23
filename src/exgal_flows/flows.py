@@ -105,10 +105,36 @@ def hi_surface_density(mom0_deproj, factor: float = 0.0196) -> u.Quantity:
     return factor * np.asarray(vals) * u.solMass / u.pc**2
 
 
-def hi_laplacian(mom0_deproj) -> np.ndarray:
-    """Laplacian of the deprojected HI moment-0 map (structure proxy)."""
-    vals = getattr(mom0_deproj, "value", mom0_deproj)
-    return nd.laplace(np.asarray(vals))
+def hi_laplacian(mom0_deproj, sigma_pix: float = 0.0) -> np.ndarray:
+    """Laplacian of the deprojected HI moment-0 map (structure proxy).
+
+    Negative values mark HI peaks / ridges, positive values troughs and the
+    flanks of sharp column-density jumps.
+
+    Parameters
+    ----------
+    mom0_deproj : array-like or Quantity
+        Deprojected HI moment-0 map.
+    sigma_pix : float
+        Optional Gaussian pre-smoothing (sigma, pixels).  The smoothing is
+        NaN-aware (normalized convolution), so blanked pixels do not bleed
+        zeros into the footprint; pixels that were NaN stay NaN.  ``0``
+        (default) applies no smoothing.
+
+    Returns
+    -------
+    numpy.ndarray
+        Laplacian (moment-0 units per pixel**2).  NaN where the input or
+        any of its 4-neighbours is NaN.
+    """
+    vals = np.asarray(getattr(mom0_deproj, "value", mom0_deproj), dtype=float)
+    if sigma_pix and sigma_pix > 0:
+        good = np.isfinite(vals)
+        num = nd.gaussian_filter(np.where(good, vals, 0.0), sigma_pix)
+        den = nd.gaussian_filter(good.astype(float), sigma_pix)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            vals = np.where(good, num / den, np.nan)
+    return nd.laplace(vals)
 
 
 def smoothed_velocity_field(mom0_deproj, mom1_deproj, sigma_pix: float) -> np.ndarray:

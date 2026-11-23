@@ -86,7 +86,8 @@ def plot_divergence_of_co_bright(result: DivergenceResult, ax=None):
     return fig
 
 
-def plot_resolution_study(study: dict, which: str = "shear"):
+def plot_resolution_study(study: dict, which: str = "shear", axes=None,
+                          label: str | None = None, **plot_kw):
     """Small-multiples of a gradient curve across smoothing scales.
 
     Parameters
@@ -95,6 +96,13 @@ def plot_resolution_study(study: dict, which: str = "shear"):
         From :meth:`exgal_flows.pipeline.FlowAnalysis.resolution_study`.
     which : {"shear", "divergence"}
         Which curve to show in each panel.
+    axes : sequence of matplotlib Axes, optional
+        One axis per smoothing scale.  Pass the axes from a previous call
+        to overlay several studies (e.g. different pixel selections).
+    label : str, optional
+        Legend label for this study's line (legend drawn on the first axis).
+    **plot_kw
+        Passed to ``ax.plot`` (default ``color="C1"``).
 
     Returns
     -------
@@ -102,18 +110,25 @@ def plot_resolution_study(study: dict, which: str = "shear"):
     """
     fwhms = sorted(study)
     n = len(fwhms)
-    fig, axes = plt.subplots(1, n, figsize=(4 * n, 3.5), sharey=True)
-    if n == 1:
-        axes = [axes]
+    if axes is None:
+        fig, axes = plt.subplots(1, n, figsize=(4 * n, 3.5), sharey=True)
+        if n == 1:
+            axes = [axes]
+    else:
+        axes = list(np.ravel(axes))
+        fig = axes[0].figure
+    plot_kw.setdefault("color", "C1")
 
     xlabel = "Shear [km/s/kpc]" if which == "shear" else "Divergence [km/s/kpc]"
     for ax, fwhm in zip(axes, fwhms):
         curve = study[fwhm][which]
-        ax.plot(curve.centers * 1000.0, curve.fraction, color="C1")
+        ax.plot(curve.centers * 1000.0, curve.fraction, label=label, **plot_kw)
         title = "no smoothing" if study[fwhm]["sigma_pix"] == 0 else f"FWHM = {fwhm:.0f} pc"
         ax.set_title(title)
         ax.set_xlabel(xlabel)
     axes[0].set_ylabel("Fraction of pixels with CO")
+    if label is not None:
+        axes[0].legend(frameon=False, fontsize=8)
     fig.tight_layout()
     return fig
 
