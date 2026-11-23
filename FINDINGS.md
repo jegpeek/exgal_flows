@@ -100,6 +100,12 @@ present at 57-86 pc, then washes out by ~150 pc — consistent with the
 "effects live on 50-100 pc scales" claim (the underlying structures are at
 the fine end of that range; they survive smoothing up to ~100 pc).
 
+> **Superseded (2026-11-23).** These smoothed values used the mom0-weighted
+> smoothing `smooth(mom0·v) / smooth(mom0)`, which spread every blank pixel
+> into a NaN square ~8σ on a side. At 86 pc that discarded ~75% of the map.
+> The 58-150 pc rows, and the conclusion drawn from them, need a rerun with
+> the fixed smoothing. See [FINDINGS_v2.md, "Smoothing fix"](FINDINGS_v2.md#smoothing-fix-nan-spreading-in-the-resolution-study).
+
 ## New vs. old HI data (the epoch comparison)
 
 Running `scripts/compare_epochs.py` (both epochs, same 4000 pc physical
@@ -318,6 +324,12 @@ where the convergence signal is strongest.
 (At 86 pc the highest-shear bins empty out on the finite disk, so that last
 row's point estimate is noisy — read it as "still strong," not as a precise
 0.45.)
+
+> **Superseded (2026-11-23).** The smoothed rows used the smoothing that spread
+> blank pixels into NaN squares (~75% of the map lost at 86 pc). The emptying
+> of the highest-shear bins at 86 pc is at least partly that loss, not the
+> finite disk. The direction (steeper with smoothing) matches the fixed
+> resolution-study curves by eye, but these values need a rerun. See [FINDINGS_v2.md, "Smoothing fix"](FINDINGS_v2.md#smoothing-fix-nan-spreading-in-the-resolution-study).
 
 **d) Galactocentric annulus (new, CO>2x).** Unlike the *divergence* relation,
 which reverses sign with radius, the shear suppression **keeps the same sign

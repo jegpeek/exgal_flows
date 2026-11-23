@@ -136,6 +136,11 @@ class AnalysisConfig:
         radial divergence profile.
     block_pc : float
         Block side length (pc) for the spatial (tiled) block bootstrap.
+    smoothing_min_coverage : float
+        For the smoothed velocity fields (resolution study, smoothed shear
+        sensitivity): blank pixels where less than this fraction of the
+        Gaussian kernel lands on valid pixels.  Blanks get zero weight in
+        the smoothing, so this only removes strongly one-sided edge values.
     """
 
     co_threshold_K: float = 0.6
@@ -154,6 +159,7 @@ class AnalysisConfig:
         0.0, 300.0, 600.0, 900.0, 1200.0, 1500.0, 2000.0, 2500.0, 3200.0, 4000.0
     )
     block_pc: float = 300.0
+    smoothing_min_coverage: float = 0.5
 
 
 @dataclass
