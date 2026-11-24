@@ -61,3 +61,21 @@ def test_smoothed_velocity_zero_sigma_identity():
 
 def test_fwhm_pc_conversion():
     assert np.isclose(flows.fwhm_pc(2.0, 3.0), 2.0 * 3.0 * 2.355)
+
+
+def test_local_plane_gradient_recovers_linear_field_under_varying_weights():
+    import numpy as np
+    from exgal_flows.flows import local_plane_gradient, normalized_smooth
+    yy, xx = np.indices((96, 96)).astype(float)
+    v = 2.0 + 0.3 * xx - 0.7 * yy
+    rng = np.random.default_rng(0)
+    w = np.exp(3 * rng.standard_normal(v.shape))           # wildly varying weights
+    v_nan = v.copy(); v_nan[40:50, 40:50] = np.nan          # a blanked hole
+    gx, gy = local_plane_gradient(v_nan, w, 4.0)
+    inner = (slice(20, 76),) * 2
+    assert np.nanmax(np.abs(gx[inner] - 0.3)) < 1e-6
+    assert np.nanmax(np.abs(gy[inner] + 0.7)) < 1e-6
+    # weighted smoothing of a linear field is biased by the weights; the plane fit is not
+    sm = normalized_smooth(v_nan, w, 4.0)
+    gy_sm, gx_sm = np.gradient(sm)
+    assert np.nanstd(gx_sm[inner] - 0.3) > 1e-2
